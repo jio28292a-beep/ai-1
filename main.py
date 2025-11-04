@@ -6,3 +6,4 @@ if st.button('인사말 생성가능'):
   st.info(name+'님! 반가워요!')
   st.warning(menu+'을(를) 좋아하세요??,저도요!!')
   st.error('반갑습니다')
+  st.balloons()
