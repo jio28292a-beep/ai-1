@@ -5,13 +5,13 @@ from streamlit_folium import st_folium
 from folium.plugins import MarkerCluster
 
 # ------------------------------------------------
-# Streamlit 기본 설정
+# 기본 설정
 # ------------------------------------------------
 st.set_page_config(page_title="서울 관광지도 (외국인 인기 TOP)", layout="wide")
-st.title("🌏 외국인들이 좋아하는 서울 주요 관광지 TOP 지도")
+st.title("🌏 외국인들이 좋아하는 서울 주요 관광지 지도")
 st.markdown("""
 서울을 방문하는 외국인들이 가장 많이 찾는 명소들을 **Folium 지도**로 시각화했습니다.  
-마커를 클릭하면 관광지 설명, 인기도 이유, 인근 지하철역 정보도 함께 볼 수 있습니다.
+지도에서 관광지를 클릭하면 하단에 자세한 정보가 표시됩니다.
 """)
 
 # ------------------------------------------------
@@ -111,20 +111,18 @@ places = [
 ]
 
 # ------------------------------------------------
-# 사이드바 설정
+# 사이드바 옵션
 # ------------------------------------------------
 st.sidebar.header("🗺 지도 옵션")
 max_display = st.sidebar.slider("표시할 관광지 개수", 3, len(places), 10)
 map_height = st.sidebar.slider("지도 높이 (px)", 400, 1000, 650)
-st.sidebar.markdown("※ 마커 클릭 시 세부 정보 표시")
 
 # ------------------------------------------------
-# 지도 생성 (서울 중심)
+# 지도 생성
 # ------------------------------------------------
 m = folium.Map(location=[37.5665, 126.9780], zoom_start=12, control_scale=True)
 cluster = MarkerCluster().add_to(m)
 
-# 마커 아이콘 HTML 함수 (시각적 강조)
 def marker_icon_html(rank):
     colors = ["#E63946", "#F4A261", "#2A9D8F", "#1D3557", "#8ECAE6"]
     color = colors[(rank - 1) % len(colors)]
@@ -138,22 +136,17 @@ def marker_icon_html(rank):
         ">{rank}</div>
     """
 
-# 관광지 마커 추가
+# 마커 추가
 for p in places[:max_display]:
-    popup_html = f"""
-    <b>{p['rank']}. {p['name']}</b><br>
-    🏛 {p['desc']}<br>
-    ⭐ <i>{p['reason']}</i><br>
-    🚇 가장 가까운 지하철역: <b>{p['station']}</b><br>
-    🔗 <a href='{p['url']}' target='_blank'>자세히 보기</a>
-    """
+    popup_html = f"<b>{p['rank']}. {p['name']}</b>"
     folium.Marker(
         location=[p["lat"], p["lon"]],
-        popup=folium.Popup(popup_html, max_width=300),
+        popup=popup_html,
+        tooltip=p["name"],
         icon=folium.DivIcon(html=marker_icon_html(p["rank"]))
     ).add_to(cluster)
 
-# 타일 추가 (명시적 attribution)
+# 타일 추가
 folium.TileLayer("OpenStreetMap").add_to(m)
 folium.TileLayer(
     tiles="https://stamen-tiles.a.ssl.fastly.net/terrain/{z}/{x}/{y}.jpg",
@@ -163,21 +156,31 @@ folium.TileLayer(
 folium.LayerControl().add_to(m)
 
 # ------------------------------------------------
-# Streamlit에 지도 출력
+# Streamlit 지도 출력
 # ------------------------------------------------
-st_folium(m, width="100%", height=map_height)
+st.markdown("### 🗺 관광지 지도 (마커를 클릭해보세요)")
+map_data = st_folium(m, width="100%", height=map_height)
 
 # ------------------------------------------------
-# 하단 설명
+# 마커 클릭 시 하단 정보 표시
 # ------------------------------------------------
-st.markdown("## 📍 관광지 정보 요약")
-for p in places[:max_display]:
-    st.markdown(f"""
-    **{p['rank']}. [{p['name']}]({p['url']})**  
-    🏛 {p['desc']}  
-    ⭐ {p['reason']}  
-    🚇 가장 가까운 지하철역: **{p['station']}**
-    """)
+clicked_info = None
+if map_data and map_data.get("last_object_clicked_popup"):
+    clicked_text = map_data["last_object_clicked_popup"]
+    for p in places:
+        if p["name"] in clicked_text:
+            clicked_info = p
+            break
+
+st.markdown("---")
+if clicked_info:
+    st.markdown(f"## 📍 {clicked_info['rank']}. {clicked_info['name']}")
+    st.markdown(f"🏛 {clicked_info['desc']}")
+    st.markdown(f"⭐ {clicked_info['reason']}")
+    st.markdown(f"🚇 가장 가까운 지하철역: **{clicked_info['station']}**")
+    st.markdown(f"[🔗 자세히 보기]({clicked_info['url']})")
+else:
+    st.info("👆 지도의 마커를 클릭하면 해당 관광지의 상세 설명이 여기에 표시됩니다.")
 
 # ------------------------------------------------
 # requirements.txt 다운로드 버튼
