@@ -1,167 +1,115 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
 import os
+import pandas as pd
+import streamlit as st
+import plotly.express as px
 
-# -----------------------
-# 데이터 로드 (안전한 인코딩 시도, 캐시)
-# -----------------------
-@st.cache_data
-def load_data():
-    csv_path = os.path.join('..', 'subway.csv')  # pages 폴더 기준 상위
-    # 인코딩 여러가지 시도
-    for enc in ('utf-8', 'cp949', 'euc-kr'):
-        try:
-            df = pd.read_csv(csv_path, encoding=enc)
-            break
-        except Exception:
-            df = None
-    if df is None:
-        raise FileNotFoundError(f"파일을 열 수 없습니다: {csv_path} (utf-8/cp949/euc-kr 모두 실패)")
+# -------------------------
+# 1) CSV 자동 탐색 함수
+# -------------------------
+def find_csv(filename="subway.csv"):
+    candidate_paths = [
+        os.path.join('.', filename),
+        os.path.join('..', filename),
+        os.path.join('..', '..', filename),
+        os.path.join('pages', filename),
+        os.path.join('/', 'app', filename),
+        os.path.join('/mount', 'src', filename),
+    ]
 
-    # 컬럼명 공백제거
-    df.columns = [c.strip() for c in df.columns]
+    # 기본 경로 탐색
+    for path in candidate_paths:
+        if os.path.exists(path):
+            return path
 
-    # 사용일자 문자열화(정수로 되어있을 가능성)
-    if '사용일자' not in df.columns:
-        raise KeyError("CSV에 '사용일자' 컬럼이 없습니다.")
-    df['사용일자'] = df['사용일자'].astype(str)
+    # 전체 파일 시스템 탐색
+    for root, dirs, files in os.walk('/'):
+        if filename in files:
+            return os.path.join(root, filename)
 
-    # 승/하차 컬럼 확인 및 숫자형 변환
-    for col in ('승차총승객수', '하차총승객수'):
-        if col not in df.columns:
-            raise KeyError(f"CSV에 '{col}' 컬럼이 없습니다.")
-        # 숫자형으로 변환 (콤마, 공백 제거)
-        df[col] = (
-            df[col]
-            .astype(str)
-            .str.replace(',', '', regex=False)
-            .str.strip()
-            .replace({'': '0', 'nan': '0'})
-        )
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+    return None
 
-    # 총승하차 컬럼
-    df['총승하차'] = df['승차총승객수'] + df['하차총승객수']
 
-    # 노선명/역명 공백제거
-    if '노선명' in df.columns:
-        df['노선명'] = df['노선명'].astype(str).str.strip()
-    if '역명' in df.columns:
-        df['역명'] = df['역명'].astype(str).str.strip()
+# -------------------------
+# 2) CSV 로드
+# -------------------------
+csv_path = find_csv()
 
-    return df
+st.title("🚇 2025년 10월 지하철 역 승·하차 분석")
+st.write("CSV 파일 자동 탐색 기능 포함됨")
 
-# -----------------------
-# 색상 그라데이션 생성
-# -----------------------
-def make_yellow_gradient(n):
-    """첫 항목 제외(1등 하늘색)하고 나머지 n-1개 노랑 -> 연한 노랑 그라데이션 반환."""
-    if n <= 1:
-        return []
-    start = (255, 200, 0)
-    end = (255, 245, 160)
-    steps = n - 1
-    colors = []
-    # steps可能 =1 일 때도 작동
-    for i in range(steps):
-        t = 0 if steps == 1 else i / (steps - 1)
-        r = int(round(start[0] + (end[0] - start[0]) * t))
-        g = int(round(start[1] + (end[1] - start[1]) * t))
-        b = int(round(start[2] + (end[2] - start[2]) * t))
-        colors.append(f'rgba({r}, {g}, {b}, 1)')
-    return colors
+if csv_path is None:
+    st.error("❌ subway.csv 파일을 찾을 수 없습니다.\nStreamlit Cloud 파일 위치를 확인하세요.")
+    st.stop()
+else:
+    st.success(f"📁 CSV 파일 로드 성공: `{csv_path}`")
 
-# -----------------------
-# 메인
-# -----------------------
-def main():
-    st.set_page_config(page_title='지하철 승하차 Top 바', layout='wide')
-    st.title('지하철 승하차 데이터 — 2025년 10월 (Streamlit / Plotly)')
+    df = pd.read_csv(csv_path, encoding="utf-8", engine="python")
 
-    # 데이터 로드 안전하게 처리
-    try:
-        df = load_data()
-    except FileNotFoundError as e:
-        st.error(str(e))
-        st.info("pages 폴더 위(상위)에 subway.csv 파일을 올려두었는지 확인하세요.")
-        return
-    except KeyError as e:
-        st.error(f"컬럼 문제: {e}")
-        return
-    except Exception as e:
-        st.exception(e)
-        return
+# -------------------------
+# 데이터 전처리
+# -------------------------
+df["합계"] = df["승차총승객수"] + df["하차총승객수"]
+df["날짜"] = pd.to_datetime(df["날짜"])
 
-    # 2025년 10월 날짜 목록
-    oct_dates = sorted([d for d in df['사용일자'].unique() if d.startswith('202510')])
-    if not oct_dates:
-        st.warning('데이터에 2025년 10월(202510**) 항목이 없습니다.')
-        return
+# -------------------------
+# 3) 사용자 선택 UI
+# -------------------------
+st.subheader("📌 날짜와 호선 선택")
 
-    # UI: 날짜, 노선 선택
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        selected_date = st.selectbox('2025년 10월 날짜 선택', oct_dates)
-    with col2:
-        lines = sorted(df['노선명'].unique())
-        selected_line = st.selectbox('호선(노선) 선택', lines)
+# 2025년 10월만 필터
+df_oct = df[df["날짜"].dt.month == 10]
 
-    # 필터링
-    filtered = df[(df['사용일자'] == selected_date) & (df['노선명'] == selected_line)].copy()
-    if filtered.empty:
-        st.warning('선택한 날짜와 호선에 해당하는 데이터가 없습니다.')
-        return
+선택_날짜 = st.date_input(
+    "날짜 선택 (2025년 10월 중 하루)",
+    value=df_oct["날짜"].iloc[0].date(),
+    min_value=df_oct["날짜"].min().date(),
+    max_value=df_oct["날짜"].max().date(),
+)
 
-    # 역별 합산(안전)
-    agg = filtered.groupby('역명', as_index=False)['총승하차'].sum()
-    agg = agg.sort_values('총승하차', ascending=False)
+호선_list = sorted(df["호선"].unique())
+선택_호선 = st.selectbox("호선 선택", 호선_list)
 
-    # 색상 생성 (1등 하늘색)
-    n = len(agg)
-    colors = []
-    if n >= 1:
-        colors.append('rgba(135, 206, 235, 1)')  # skyblue
-    colors += make_yellow_gradient(n)
-    colors = colors[:n]
+# -------------------------
+# 4) 선택된 조건 필터링
+# -------------------------
+df_filtered = df_oct[
+    (df_oct["날짜"].dt.date == 선택_날짜)
+    & (df_oct["호선"] == 선택_호선)
+]
 
-    # Plotly 그래프 (텍스트에 천단위 콤마)
-    fig = px.bar(
-        agg,
-        x='역명',
-        y='총승하차',
-        text='총승하차',
-        title=f"{selected_date} — {selected_line} 역별 총승하차 순위",
-        labels={'총승하차': '총승하차(승차+하차)', '역명': '역명'},
-    )
+if df_filtered.empty:
+    st.warning("⚠ 선택한 날짜와 호선에 해당하는 데이터가 없습니다.")
+    st.stop()
 
-    # 텍스트 포맷, 색상, 호버
-    fig.update_traces(
-        marker=dict(color=colors, line=dict(width=0)),
-        texttemplate='%{text:,}',
-        textposition='auto',
-        hovertemplate='<b>%{x}</b><br>총승하차: %{y:,}<extra></extra>'
-    )
+# -------------------------
+# 5) 승·하차 합계 기준 정렬
+# -------------------------
+df_sorted = df_filtered.sort_values("합계", ascending=False)
 
-    # x축 카테고리 순서(총승하차 내림차순)
-    fig.update_layout(
-        xaxis={'categoryorder': 'array', 'categoryarray': agg['역명'].tolist()},
-        yaxis=dict(title='총승하차(명)', tick0=0, dtick=100),
-        margin=dict(l=40, r=20, t=70, b=130),
-        bargap=0.12,
-    )
+# 색상 그라데이션 (1등=하늘색, 나머지=노란색→옅어짐)
+colors = ["skyblue"] + [f"rgba(255, 230, 100, {1 - i/len(df_sorted)})" for i in range(1, len(df_sorted)+1)]
 
-    st.plotly_chart(fig, use_container_width=True)
+# -------------------------
+# 6) Plotly 그래프 생성
+# -------------------------
+fig = px.bar(
+    df_sorted,
+    x="역명",
+    y="합계",
+    title=f"🚇 {선택_날짜} / {선택_호선} 승·하차 총합 Top 역",
+)
 
-    # 표로 보기
-    with st.expander('상세 데이터 (역별)'):
-        st.dataframe(agg.reset_index(drop=True).assign(총승하차=lambda d: d['총승하차'].map(lambda x: f"{x:,}")))
+fig.update_traces(marker_color=colors)
+fig.update_layout(
+    xaxis_title="역명",
+    yaxis_title="승·하차 총합",
+    template="plotly_white",
+)
 
-    st.markdown('---')
-    st.markdown('**설치해야 할 패키지 (requirements.txt)**')
-    st.code('''streamlit
-pandas
-plotly''')
+st.plotly_chart(fig, use_container_width=True)
 
-if __name__ == '__main__':
-    main()
+# -------------------------
+# 데이터 테이블 출력
+# -------------------------
+st.subheader("📄 데이터 확인")
+st.dataframe(df_sorted)
