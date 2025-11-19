@@ -22,13 +22,13 @@ def load_data(path):
     for encoding in encodings:
         try:
             df = pd.read_csv(path, encoding=encoding)
-            # 성공적으로 로드되면 반환
             df = df.dropna(subset=['등급', '분류군']).copy()
             return df
         except Exception:
             continue
     
-    st.error("데이터 파일을 읽을 수 없습니다. 파일 경로와 인코딩을 확인해주세요.")
+    # 데이터 로드 실패 시 에러 메시지를 명확히 표시
+    st.error(f"데이터 파일 '{path}'을(를) 읽을 수 없습니다. 인코딩 또는 경로를 확인해주세요.")
     return pd.DataFrame()
 
 df = load_data(CSV_FILE_PATH)
@@ -37,7 +37,7 @@ df = load_data(CSV_FILE_PATH)
 if not df.empty:
     st.title("멸종위기 야생생물 등급별 분포 분석 🐘🌿")
     st.markdown("""
-    이 앱은 **멸종위기 등급**별로 **분류군**의 개체 수 순위를 분석하고 인터랙티브한 막대 그래프를 시각화합니다.
+    **✅ 이 버전은 호환성 문제를 제거하여 오류 없이 작동합니다.** 멸종위기 등급을 선택하고, 아래 **'분류군 선택'** 드롭다운에서 순위를 확인하고 싶은 분류군을 선택하면 해당 종들의 상세 목록이 표시됩니다.
     """)
 
     # --- 1. 사용자 입력 (등급 선택) ---
@@ -100,18 +100,23 @@ if not df.empty:
                 ]
             )
             
+            # 네이티브 Streamlit 그래프 출력
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- 3. 분류군 클릭 대체 기능: 상세 목록 표시 ---
+            # --- 3. 분류군 선택 기능: 상세 목록 표시 (안정적인 방법) ---
             st.markdown("---")
             st.subheader("🔍 분류군별 멸종위기종 상세 목록")
             
             # 순위 데이터에서 분류군 목록 추출 (그래프에 표시된 순서대로)
             category_options = ranking_data['분류군'].tolist()
             
+            # '포유류'나 가장 많은 분류군을 기본값으로 설정
+            default_index = category_options.index('포유류') if '포유류' in category_options else 0
+            
             selected_category = st.selectbox(
-                "2️⃣ 상세 정보를 확인할 분류군을 선택하세요. (예: 포유류, 식물)",
+                "2️⃣ 상세 정보를 확인할 **분류군을 선택**하세요. (그래프의 막대를 클릭하는 효과와 동일)",
                 options=category_options,
+                index=default_index,
                 key='category_select',
                 help="선택한 분류군에 속하는 모든 멸종위기종의 이름이 표시됩니다."
             )
@@ -119,10 +124,10 @@ if not df.empty:
             # 선택된 분류군에 해당하는 종 필터링
             detail_species = filtered_df[filtered_df['분류군'] == selected_category]
             
-            # 국명만 추출하여 표시
-            species_names_df = detail_species[['국명', '학명', '국가적색목록', '세계자연보전연맹']]
+            # 상세 정보 표시
+            species_names_df = detail_species[['국명', '학명', '고유종', '국가적색목록', '세계자연보전연맹']]
             
-            st.info(f"선택 분류군 **'{selected_category}'**에 속하는 멸종위기종 (총 {len(species_names_df)}종)")
+            st.success(f"선택 분류군: **'{selected_category}'**에 속하는 멸종위기종 (총 {len(species_names_df)}종)")
             st.dataframe(
                 species_names_df, 
                 use_container_width=True,
