@@ -27,7 +27,6 @@ def load_data(path):
         except Exception:
             continue
     
-    # 데이터 로드 실패 시 에러 메시지를 명확히 표시
     st.error(f"데이터 파일 '{path}'을(를) 읽을 수 없습니다. 인코딩 또는 경로를 확인해주세요.")
     return pd.DataFrame()
 
@@ -37,7 +36,8 @@ df = load_data(CSV_FILE_PATH)
 if not df.empty:
     st.title("멸종위기 야생생물 등급별 분포 분석 🐘🌿")
     st.markdown("""
-    **✅ 이 버전은 호환성 문제를 제거하여 오류 없이 작동합니다.** 멸종위기 등급을 선택하고, 아래 **'분류군 선택'** 드롭다운에서 순위를 확인하고 싶은 분류군을 선택하면 해당 종들의 상세 목록이 표시됩니다.
+    이 앱은 **멸종위기 등급**별로 **분류군**의 개체 수 순위를 분석합니다.
+    **등급을 선택**하면 막대 그래프가 표시되며, 그래프 아래의 **'상세 목록을 볼 분류군 선택'** 드롭다운에서 순위를 클릭하는 것과 동일한 효과를 얻을 수 있습니다.
     """)
 
     # --- 1. 사용자 입력 (등급 선택) ---
@@ -100,31 +100,41 @@ if not df.empty:
                 ]
             )
             
-            # 네이티브 Streamlit 그래프 출력
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- 3. 분류군 선택 기능: 상세 목록 표시 (안정적인 방법) ---
+            # --- 3. 분류군 선택 기능: 상세 목록 표시 및 심각도 순 정렬 ---
             st.markdown("---")
-            st.subheader("🔍 분류군별 멸종위기종 상세 목록")
+            st.subheader("🔍 분류군별 멸종위기종 상세 목록 (심각도 순 정렬)")
             
-            # 순위 데이터에서 분류군 목록 추출 (그래프에 표시된 순서대로)
             category_options = ranking_data['분류군'].tolist()
-            
-            # '포유류'나 가장 많은 분류군을 기본값으로 설정
-            default_index = category_options.index('포유류') if '포유류' in category_options else 0
+            default_index = category_options.index(top_category) if top_category in category_options else 0
             
             selected_category = st.selectbox(
-                "2️⃣ 상세 정보를 확인할 **분류군을 선택**하세요. (그래프의 막대를 클릭하는 효과와 동일)",
+                "2️⃣ 상세 정보를 확인할 **분류군을 선택**하세요.",
                 options=category_options,
                 index=default_index,
                 key='category_select',
-                help="선택한 분류군에 속하는 모든 멸종위기종의 이름이 표시됩니다."
+                help="선택한 분류군에 속하는 종 목록을 멸종위기 심각도 순으로 표시합니다."
             )
             
-            # 선택된 분류군에 해당하는 종 필터링
-            detail_species = filtered_df[filtered_df['분류군'] == selected_category]
+            # 선택된 분류군에 해당하는 종 필터링 (복사본을 만들어 SettingWithCopyWarning 방지)
+            detail_species = filtered_df[filtered_df['분류군'] == selected_category].copy()
             
-            # 상세 정보 표시
+            # --- 4. 멸종위기 심각도 순으로 정렬 (요청된 '많은순부터 작은순' 해석) ---
+            # 멸종위기 등급 순서 정의 (CR:위급, EN:위기, VU:취약, NT:준위협, LC:최소관심)
+            severity_order = ['CR', 'EN', 'VU', 'NT', 'LC', 'DD', 'NE']
+            
+            # '국가적색목록' 컬럼을 순서가 있는 범주형 데이터로 변환
+            detail_species['국가적색목록_순위'] = pd.Categorical(
+                detail_species['국가적색목록'], 
+                categories=severity_order, 
+                ordered=True
+            )
+            
+            # 순위 컬럼을 기준으로 정렬 (가장 심각한 등급(CR)이 위로 오도록)
+            detail_species = detail_species.sort_values(by='국가적색목록_순위', ascending=True)
+
+            # 상세 정보 표시 (국명, 학명, 심각도 등)
             species_names_df = detail_species[['국명', '학명', '고유종', '국가적색목록', '세계자연보전연맹']]
             
             st.success(f"선택 분류군: **'{selected_category}'**에 속하는 멸종위기종 (총 {len(species_names_df)}종)")
