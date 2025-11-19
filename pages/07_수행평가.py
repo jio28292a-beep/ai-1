@@ -5,9 +5,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
-# Plotly 클릭 이벤트를 처리하기 위해 라이브러리 임포트
-# 반드시 'streamlit-plotly-events'를 설치해야 합니다.
-from streamlit_plotly_events import plotly_events
 
 # --- 설정 및 데이터 로드 ---
 st.set_page_config(
@@ -25,6 +22,7 @@ def load_data(path):
     for encoding in encodings:
         try:
             df = pd.read_csv(path, encoding=encoding)
+            # 성공적으로 로드되면 반환
             df = df.dropna(subset=['등급', '분류군']).copy()
             return df
         except Exception:
@@ -35,16 +33,11 @@ def load_data(path):
 
 df = load_data(CSV_FILE_PATH)
 
-# Streamlit 세션 상태 초기화 (클릭된 분류군을 저장)
-if 'clicked_category' not in st.session_state:
-    st.session_state['clicked_category'] = None
-
 # --- Streamlit 앱 시작 ---
 if not df.empty:
     st.title("멸종위기 야생생물 등급별 분포 분석 🐘🌿")
     st.markdown("""
     이 앱은 **멸종위기 등급**별로 **분류군**의 개체 수 순위를 분석하고 인터랙티브한 막대 그래프를 시각화합니다.
-    **막대 그래프의 특정 막대를 클릭**하면, 해당 분류군에 속하는 상세 목록이 아래에 나타납니다.
     """)
 
     # --- 1. 사용자 입력 (등급 선택) ---
@@ -107,43 +100,35 @@ if not df.empty:
                 ]
             )
             
-            # --- 3. Plotly 클릭 이벤트 처리: 최소 인수로 안정성 확보 ---
-            
-            # 'plotly_events' 함수 호출 시, 오류를 피하기 위해 필수 인수만 사용합니다.
-            selected_point = plotly_events(
-                fig, 
-                events=('click',),
-                key=f'bar_chart_click_{selected_grade}', # 등급이 바뀔 때마다 key 갱신
-            )
+            st.plotly_chart(fig, use_container_width=True)
 
-            # 클릭된 데이터가 있을 경우 (막대를 클릭했을 경우)
-            if selected_point:
-                # 클릭된 막대의 'x'축 값 (분류군 이름)을 가져와 세션 상태에 저장
-                clicked_category = selected_point[0]['x']
-                st.session_state['clicked_category'] = clicked_category
-            
+            # --- 3. 분류군 클릭 대체 기능: 상세 목록 표시 ---
             st.markdown("---")
-            st.subheader("📊 클릭된 분류군의 상세 목록")
+            st.subheader("🔍 분류군별 멸종위기종 상세 목록")
             
-            # 세션 상태에 저장된 분류군 이름이 있을 경우 상세 목록 출력
-            if st.session_state['clicked_category']:
-                clicked_category = st.session_state['clicked_category']
-                
-                # 현재 선택된 등급의 데이터에 대해서만 필터링
-                detail_species = filtered_df[filtered_df['분류군'] == clicked_category]
-                
-                # 상세 정보 표시
-                species_names_df = detail_species[['국명', '학명', '고유종', '국가적색목록', '세계자연보전연맹']]
-                
-                st.success(f"클릭된 분류군: **'{clicked_category}'**에 속하는 멸종위기종 (총 {len(species_names_df)}종)")
-                st.dataframe(
-                    species_names_df, 
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info("👆 위에 있는 막대 그래프의 특정 분류군 막대를 클릭하면 해당 상세 목록이 표시됩니다.")
-
+            # 순위 데이터에서 분류군 목록 추출 (그래프에 표시된 순서대로)
+            category_options = ranking_data['분류군'].tolist()
+            
+            selected_category = st.selectbox(
+                "2️⃣ 상세 정보를 확인할 분류군을 선택하세요. (예: 포유류, 식물)",
+                options=category_options,
+                key='category_select',
+                help="선택한 분류군에 속하는 모든 멸종위기종의 이름이 표시됩니다."
+            )
+            
+            # 선택된 분류군에 해당하는 종 필터링
+            detail_species = filtered_df[filtered_df['분류군'] == selected_category]
+            
+            # 국명만 추출하여 표시
+            species_names_df = detail_species[['국명', '학명', '국가적색목록', '세계자연보전연맹']]
+            
+            st.info(f"선택 분류군 **'{selected_category}'**에 속하는 멸종위기종 (총 {len(species_names_df)}종)")
+            st.dataframe(
+                species_names_df, 
+                use_container_width=True,
+                hide_index=True
+            )
+            
     else:
         st.warning(f"선택하신 등급 '{selected_grade}'에 해당하는 데이터가 없습니다.")
 
