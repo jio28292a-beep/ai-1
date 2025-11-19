@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import os
 # Plotly 클릭 이벤트를 처리하기 위해 라이브러리 임포트
+# 반드시 'streamlit-plotly-events'를 설치해야 합니다.
 from streamlit_plotly_events import plotly_events
 
 # --- 설정 및 데이터 로드 ---
@@ -34,6 +35,10 @@ def load_data(path):
 
 df = load_data(CSV_FILE_PATH)
 
+# Streamlit 세션 상태 초기화 (클릭된 분류군을 저장)
+if 'clicked_category' not in st.session_state:
+    st.session_state['clicked_category'] = None
+
 # --- Streamlit 앱 시작 ---
 if not df.empty:
     st.title("멸종위기 야생생물 등급별 분포 분석 🐘🌿")
@@ -48,6 +53,7 @@ if not df.empty:
         "1️⃣ 멸종위기 등급 선택",
         available_grades,
         index=0,
+        key='grade_select',
         help="분석할 멸종위기 등급(I급, II급 등)을 선택하세요."
     )
 
@@ -101,25 +107,29 @@ if not df.empty:
                 ]
             )
             
-            # --- 3. Plotly 클릭 이벤트 처리 ---
+            # --- 3. Plotly 클릭 이벤트 처리: 최소 인수로 안정성 확보 ---
             
-            # plotly_events를 사용하여 그래프를 표시하고 클릭된 데이터를 받음
+            # 'plotly_events' 함수 호출 시, 오류를 피하기 위해 필수 인수만 사용합니다.
             selected_point = plotly_events(
                 fig, 
-                events=('click',), # 'click' 이벤트만 받음
-                key=f'bar_chart_click_{selected_grade}',
-                override_height=500 # 그래프 높이 지정
+                events=('click',),
+                key=f'bar_chart_click_{selected_grade}', # 등급이 바뀔 때마다 key 갱신
             )
-
-            st.markdown("---")
-            st.subheader("📊 클릭된 분류군의 상세 목록")
 
             # 클릭된 데이터가 있을 경우 (막대를 클릭했을 경우)
             if selected_point:
-                # 클릭된 막대의 'x'축 값 (분류군 이름)을 가져옴
+                # 클릭된 막대의 'x'축 값 (분류군 이름)을 가져와 세션 상태에 저장
                 clicked_category = selected_point[0]['x']
+                st.session_state['clicked_category'] = clicked_category
+            
+            st.markdown("---")
+            st.subheader("📊 클릭된 분류군의 상세 목록")
+            
+            # 세션 상태에 저장된 분류군 이름이 있을 경우 상세 목록 출력
+            if st.session_state['clicked_category']:
+                clicked_category = st.session_state['clicked_category']
                 
-                # 선택된 분류군에 해당하는 종 필터링
+                # 현재 선택된 등급의 데이터에 대해서만 필터링
                 detail_species = filtered_df[filtered_df['분류군'] == clicked_category]
                 
                 # 상세 정보 표시
